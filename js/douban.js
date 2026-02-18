@@ -442,59 +442,36 @@ function renderRecommend(tag, pageLimit, pageStart) {
 }
 
 async function fetchDoubanData(url) {
-    // 添加超时控制
+    // 1. 設置 30 秒超時，給網路更多緩衝時間
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
-    
-    // 设置请求选项，包括信号和头部
-    const fetchOptions = {
-        signal: controller.signal,
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            'Referer': 'https://movie.douban.com/',
-            'Accept': 'application/json, text/plain, */*',
-        }
-    };
+    const timeoutId = setTimeout(() => controller.abort(), 30000); 
+
+    // 2. 使用更穩定且不需要 CORS 的中轉代理
+    const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`;
 
     try {
-        // 添加鉴权参数到代理URL
-        const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ? 
-            await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(url)) :
-            PROXY_URL + encodeURIComponent(url);
-            
-        // 尝试直接访问（豆瓣API可能允许部分CORS请求）
-        const response = await fetch(proxiedUrl, fetchOptions);
+        const response = await fetch(proxyUrl, { signal: controller.signal });
         clearTimeout(timeoutId);
         
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
+        if (!response.ok) throw new Error("主要代理無響應");
         
-        return await response.json();
+        // 獲取數據
+        const data = await response.json();
+        return data;
     } catch (err) {
-        console.error("豆瓣 API 请求失败（直接代理）：", err);
+        console.error("主要代理失敗，嘗試備用方案...", err);
         
-        // 失败后尝试备用方法：作为备选
-        const fallbackUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        // 3. 備用方案：加上時間戳防止緩存舊的錯誤，並改用另一個代理
+        const fallbackUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&t=${Date.now()}`;
         
         try {
-            const fallbackResponse = await fetch(fallbackUrl);
-            
-            if (!fallbackResponse.ok) {
-                throw new Error(`备用API请求失败! 状态: ${fallbackResponse.status}`);
-            }
-            
-            const data = await fallbackResponse.json();
-            
-            // 解析原始内容
-            if (data && data.contents) {
-                return JSON.parse(data.contents);
-            } else {
-                throw new Error("无法获取有效数据");
-            }
-        } catch (fallbackErr) {
-            console.error("豆瓣 API 备用请求也失败：", fallbackErr);
-            throw fallbackErr; // 向上抛出错误，让调用者处理
+            const fbResponse = await fetch(fallbackUrl);
+            const fbData = await fbResponse.json();
+            // allorigins 需要解析內部的 contents 字串
+            return JSON.parse(fbData.contents);
+        } catch (fbErr) {
+            console.error("所有豆瓣數據請求路徑均已失效");
+            throw fbErr;
         }
     }
 }
