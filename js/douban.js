@@ -444,9 +444,7 @@ function renderRecommend(tag, pageLimit, pageStart) {
 async function fetchDoubanData(url) {
     // 這裡我們準備三個不同的代理，只要一個成功就行
     const proxies = [
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-        `https://thingproxy.freeboard.io/fetch/${url}`, // 這是新增的穩定代理
-        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
+        `https://my-proxy.ray20123315.workers.dev/?url=${encodeURIComponent(url)}`,
     ];
 
     for (const proxyUrl of proxies) {
