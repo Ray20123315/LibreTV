@@ -1,7 +1,7 @@
 // 豆瓣热门电影电视剧推荐功能
 
 // 豆瓣标签列表 - 修改为默认标签
-let defaultMovieTags = ['热门', '最新', '经典', '豆瓣高分', '冷门佳片', '华语', '欧美', '韩国', '日本', '动作', '喜剧', '日综', '爱情', '科幻', '悬疑', '恐怖', '治愈', '美国'];
+let defaultMovieTags = ['热门', '最新', '经典', '豆瓣高分', '冷门佳片', '华语', '欧美', '韩国', '日本', '动作', '喜剧', '爱情', '科幻', '悬疑', '恐怖', '治愈'];
 let defaultTvTags = ['热门', '美剧', '英剧', '韩剧', '日剧', '国产剧', '港剧', '日本动画', '综艺', '纪录片'];
 
 // 用户标签列表 - 存储用户实际使用的标签（包含保留的系统标签和用户添加的自定义标签）
@@ -442,37 +442,56 @@ function renderRecommend(tag, pageLimit, pageStart) {
 }
 
 async function fetchDoubanData(url) {
-    // 這裡我們準備三個不同的代理，只要一個成功就行
-    const proxies = [
-        `https://my-proxy.ray20123315.workers.dev/?url=${encodeURIComponent(url)}`,
-    ];
+    // 添加超时控制
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+    
+    // 设置请求选项，包括信号和头部
+    const fetchOptions = {
+        signal: controller.signal,
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Referer': 'https://movie.douban.com/',
+            'Accept': 'application/json, text/plain, */*',
+        }
+    };
 
-    for (const proxyUrl of proxies) {
+    try {
+        // 尝试直接访问（豆瓣API可能允许部分CORS请求）
+        const response = await fetch(PROXY_URL + encodeURIComponent(url), fetchOptions);
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        
+        return await response.json();
+    } catch (err) {
+        console.error("豆瓣 API 请求失败（直接代理）：", err);
+        
+        // 失败后尝试备用方法：作为备选
+        const fallbackUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        
         try {
-            console.log(`正在嘗試代理: ${proxyUrl}`);
-            const response = await fetch(proxyUrl, {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            });
-
-            if (!response.ok) continue;
-
-            let data;
-            if (proxyUrl.includes('allorigins')) {
-                const json = await response.json();
-                data = JSON.parse(json.contents); // AllOrigins 需要多一層解析
+            const fallbackResponse = await fetch(fallbackUrl);
+            
+            if (!fallbackResponse.ok) {
+                throw new Error(`备用API请求失败! 状态: ${fallbackResponse.status}`);
+            }
+            
+            const data = await fallbackResponse.json();
+            
+            // 解析原始内容
+            if (data && data.contents) {
+                return JSON.parse(data.contents);
             } else {
-                data = await response.json();
+                throw new Error("无法获取有效数据");
             }
-
-            if (data && (data.subjects || data.data)) {
-                console.log("✅ 豆瓣數據抓取成功！");
-                return data;
-            }
-        } catch (err) {
-            console.warn(`代理 ${proxyUrl} 失敗，嘗試下一個...`, err);
+        } catch (fallbackErr) {
+            console.error("豆瓣 API 备用请求也失败：", fallbackErr);
+            throw fallbackErr; // 向上抛出错误，让调用者处理
         }
     }
-    throw new Error("❌ 所有豆瓣代理伺服器均已失效，請稍後再試。");
 }
 
 // 抽取渲染豆瓣卡片的逻辑到单独函数
@@ -506,24 +525,18 @@ function renderDoubanCards(data, container) {
             
             // 处理图片URL
             // 1. 直接使用豆瓣图片URL (添加no-referrer属性)
-            //const originalCoverUrl = item.cover;
+            const originalCoverUrl = item.cover;
             
             // 2. 也准备代理URL作为备选
-            //const proxiedCoverUrl = PROXY_URL + encodeURIComponent(originalCoverUrl);
+            const imageProxyUrl = `https://my-proxy.ray20123315.workers.dev/?url=${encodeURIComponent(originalCoverUrl)}`;
             
-// --- 核心修復：徹底解決圖片裂開 418/401 ---
-            // 這裡把 https:// 去掉再編碼，並加上預設圖，weserv 才會正常運作
-            const cleanUrl = item.cover.replace('https://', '');
-            const finalCoverUrl = `https://images.weserv.nl/?url=${encodeURIComponent(cleanUrl)}&default=https://via.placeholder.com/200x300?text=No+Image`;
-            // 第二層備援：WordPress i0 代理
-            const backupCoverUrl = `https://i0.wp.com/${cleanUrl}`;
-
+            // 为不同设备优化卡片布局
             card.innerHTML = `
                 <div class="relative w-full aspect-[2/3] overflow-hidden cursor-pointer" onclick="fillAndSearchWithDouban('${safeTitle}')">
-                    <img src="${finalCoverUrl}" alt="${safeTitle}" 
+                    <img src="${originalCoverUrl}" alt="${safeTitle}" 
                         class="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
-                        onerror="this.onerror=null; this.src='${backupCoverUrl}';"
-                        loading="lazy">
+                        onerror="this.onerror=null; this.src='${imageProxyUrl}'; this.classList.add('object-contain');"
+                        loading="lazy" referrerpolicy="no-referrer">
                     <div class="absolute inset-0 bg-gradient-to-t from-black to-transparent opacity-60"></div>
                     <div class="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded-sm">
                         <span class="text-yellow-400">★</span> ${safeRate}
