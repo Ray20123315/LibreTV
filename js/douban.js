@@ -512,18 +512,19 @@ function renderDoubanCards(data, container) {
             // 2. 也准备代理URL作为备选
             //const proxiedCoverUrl = PROXY_URL + encodeURIComponent(originalCoverUrl);
             
-            const finalCoverUrl = `https://images.weserv.nl/?url=${encodeURIComponent(item.cover)}`;
-            const proxiedCoverUrl = PROXY_URL + encodeURIComponent(item.cover);
+// --- 核心修復：徹底解決圖片裂開 418/401 ---
+            // 這裡把 https:// 去掉再編碼，並加上預設圖，weserv 才會正常運作
+            const cleanUrl = item.cover.replace('https://', '');
+            const finalCoverUrl = `https://images.weserv.nl/?url=${encodeURIComponent(cleanUrl)}&default=https://via.placeholder.com/200x300?text=No+Image`;
+            // 第二層備援：WordPress i0 代理
+            const backupCoverUrl = `https://i0.wp.com/${cleanUrl}`;
 
-
-            
-            // 为不同设备优化卡片布局
             card.innerHTML = `
                 <div class="relative w-full aspect-[2/3] overflow-hidden cursor-pointer" onclick="fillAndSearchWithDouban('${safeTitle}')">
                     <img src="${finalCoverUrl}" alt="${safeTitle}" 
                         class="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
-                        onerror="this.onerror=null; this.src='${proxiedCoverUrl}'; this.classList.add('object-contain');"
-                        loading="lazy" referrerpolicy="no-referrer">
+                        onerror="this.onerror=null; this.src='${backupCoverUrl}';"
+                        loading="lazy">
                     <div class="absolute inset-0 bg-gradient-to-t from-black to-transparent opacity-60"></div>
                     <div class="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded-sm">
                         <span class="text-yellow-400">★</span> ${safeRate}
