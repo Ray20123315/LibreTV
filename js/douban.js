@@ -442,38 +442,39 @@ function renderRecommend(tag, pageLimit, pageStart) {
 }
 
 async function fetchDoubanData(url) {
-    // 1. 設置 30 秒超時，給網路更多緩衝時間
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); 
+    // 這裡我們準備三個不同的代理，只要一個成功就行
+    const proxies = [
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+        `https://thingproxy.freeboard.io/fetch/${url}`, // 這是新增的穩定代理
+        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
+    ];
 
-    // 2. 使用更穩定且不需要 CORS 的中轉代理
-    const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`;
-
-    try {
-        const response = await fetch(proxyUrl, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) throw new Error("主要代理無響應");
-        
-        // 獲取數據
-        const data = await response.json();
-        return data;
-    } catch (err) {
-        console.error("主要代理失敗，嘗試備用方案...", err);
-        
-        // 3. 備用方案：加上時間戳防止緩存舊的錯誤，並改用另一個代理
-        const fallbackUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&t=${Date.now()}`;
-        
+    for (const proxyUrl of proxies) {
         try {
-            const fbResponse = await fetch(fallbackUrl);
-            const fbData = await fbResponse.json();
-            // allorigins 需要解析內部的 contents 字串
-            return JSON.parse(fbData.contents);
-        } catch (fbErr) {
-            console.error("所有豆瓣數據請求路徑均已失效");
-            throw fbErr;
+            console.log(`正在嘗試代理: ${proxyUrl}`);
+            const response = await fetch(proxyUrl, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+
+            if (!response.ok) continue;
+
+            let data;
+            if (proxyUrl.includes('allorigins')) {
+                const json = await response.json();
+                data = JSON.parse(json.contents); // AllOrigins 需要多一層解析
+            } else {
+                data = await response.json();
+            }
+
+            if (data && (data.subjects || data.data)) {
+                console.log("✅ 豆瓣數據抓取成功！");
+                return data;
+            }
+        } catch (err) {
+            console.warn(`代理 ${proxyUrl} 失敗，嘗試下一個...`, err);
         }
     }
+    throw new Error("❌ 所有豆瓣代理伺服器均已失效，請稍後再試。");
 }
 
 // 抽取渲染豆瓣卡片的逻辑到单独函数
