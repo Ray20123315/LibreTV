@@ -1,4 +1,5 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import dns from 'node:dns/promises';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POST } from './route';
 import { SESSION_COOKIE, signSession } from '@/lib/auth';
 
@@ -59,6 +60,17 @@ async function readNdjson(res: Response) {
     .filter(Boolean)
     .map((l) => JSON.parse(l) as Record<string, unknown>);
 }
+
+// API tests mock HTTP upstreams. Mock DNS too, because production SSRF validation
+// now resolves A/AAAA records explicitly on Cloudflare Workers.
+vi.mock('node:dns/promises', () => ({
+  default: { resolve4: vi.fn(), resolve6: vi.fn() },
+}));
+
+beforeEach(() => {
+  vi.mocked(dns.resolve4).mockResolvedValue(['8.8.8.8']);
+  vi.mocked(dns.resolve6).mockRejectedValue(new Error('ENODATA'));
+});
 
 beforeAll(() => {
   process.env.PASSWORD = 'test-password';
