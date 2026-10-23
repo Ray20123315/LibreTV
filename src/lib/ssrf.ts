@@ -59,10 +59,15 @@ export async function isBlockedByDNS(urlString: string): Promise<boolean> {
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(':')) {
       return isPrivateIP(hostname);
     }
-    const result = await dns.lookup(hostname, { all: true });
-    return result.some((r) => isPrivateIP(r.address));
+    // Cloudflare Workers does not implement dns.lookup(). Use DNS record queries instead.
+    // Reject unresolved hostnames: failing open would bypass the SSRF check on Workers.
+    const records = await Promise.allSettled([dns.resolve4(hostname), dns.resolve6(hostname)]);
+    const addresses = records.flatMap((result) =>
+      result.status === 'fulfilled' ? result.value : [],
+    );
+    return addresses.length === 0 || addresses.some(isPrivateIP);
   } catch {
-    return false; // 解析失败不阻断，交给后续请求处理
+    return true; // DNS 检查异常时保守拒绝，避免绕过 SSRF 防护
   }
 }
 
