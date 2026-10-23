@@ -20,10 +20,19 @@ jobs:
           for ROOT in "https://libretv-latest.ray20123315.workers.dev" "https://libretv.ray2026.dpdns.org"; do
             echo "Verifying: $ROOT"
             curl --fail --silent --show-error --max-time 30 --retry 3 --retry-delay 2 "$ROOT/api/status" -o status.json
-            jq -e '.version == "2.21.0" and .passwordRequired == true' status.json
+            jq -e '
+              (.version == "2.21.0") and
+              (.passwordRequired == true) and
+              ((.defaultSources | length) == 34) and
+              (([.defaultSources[] | select(.isAdult == true)] | length) == 9) and
+              (([.defaultSources[].url] | unique | length) == 34) and
+              (.defaultSources | any(.name == "电影天堂资源")) and
+              (.defaultSources | any(.name == "无尽资源")) and
+              (.defaultSources | any(.name == "U酷资源"))
+            ' status.json
             curl --fail --silent --show-error --max-time 30 --retry 3 --retry-delay 2 "$ROOT/" -o homepage.html
             grep -Eqi '(LibreTV|libretv)' homepage.html
             code="$(curl --silent --show-error --max-time 30 -o unauthorized.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"wd":"verification","sources":[]}' "$ROOT/api/search")"
             test "$code" = "401"
-            echo "SMOKE_PASS: $ROOT has version 2.21.0, password enabled, homepage, unauthorized search returns 401"
+            echo "SMOKE_PASS: $ROOT has version 2.21.0, all 34 video sources (9 flagged), password enabled, homepage and guarded API"
           done
