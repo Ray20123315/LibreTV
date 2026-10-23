@@ -1,0 +1,27 @@
+name: LibreTV production HTTP smoke test
+on:
+  push:
+    branches:
+      - verify/cloudflare-smoke-20261023
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify HTTP status, version, and access guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="https://libretv-latest.ray20123315.workers.dev"
+          curl --fail --location --silent --show-error --max-time 30 --retry 2 "$ROOT/api/status" -o status.json
+          jq -e '.version == "2.21.0" and .passwordRequired == true' status.json
+          curl --fail --location --silent --show-error --max-time 30 --retry 2 "$ROOT/" -o homepage.html
+          grep -Eqi '(LibreTV|libretv)' homepage.html
+          code="$(curl --silent --show-error --location --max-time 30 -o unauthorized.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"wd":"verification","sources":[]}' "$ROOT/api/search")"
+          test "$code" = "401"
+          echo "SMOKE_PASS: api/status version 2.21.0, PASSWORD enabled, homepage loads, protected search returns 401"
